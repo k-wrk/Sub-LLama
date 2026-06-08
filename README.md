@@ -64,7 +64,17 @@ and environments easily.
 
 ## Usage
 
-Once installed, you can run the translation script using the registered command:
+Once installed, you can run the translation script using the registered command.
+
+To view all options, examples, and the list of common languages, run:
+
+```bash
+sub-llama --help
+```
+
+### 1. Translating from Video Files (MKV)
+
+Extracts subtitles automatically and translates them:
 
 ```bash
 sub-llama path/to/your/video.mkv [target_language]
@@ -86,6 +96,27 @@ This will:
 1. Extract the original English subtitle tracks to `path/to/your/video_en.srt`.
 2. Translate all subtitle lines to your target language.
 3. Save the translated subtitles into `path/to/your/video_<language>.srt`.
+
+### 2. Translating Subtitle Files Directly
+
+You can also translate an existing subtitle file (`.srt`) directly:
+
+```bash
+sub-llama --file path/to/subtitle.srt [original_language] [target_language]
+```
+
+If only one language is specified after the filename, it is treated as the target language:
+
+```bash
+# Translates to Brazilian Portuguese by default (saves to subtitle_brazilian_portuguese.srt)
+sub-llama --file path/to/subtitle.srt
+
+# Translates to Spanish (saves to subtitle_spanish.srt)
+sub-llama --file path/to/subtitle.srt Spanish
+
+# Translates from French to Spanish (saves to subtitle_spanish.srt)
+sub-llama --file path/to/subtitle.srt French Spanish
+```
 
 ---
 

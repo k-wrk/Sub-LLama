@@ -5,14 +5,15 @@ import srt
 import json
 import urllib.request
 
-def translate_text_ollama(text, language="Brazilian Portuguese", model="kaelri/hy-mt2:1.8b"):
+def translate_text_ollama(text, language="Brazilian Portuguese", original_language=None, model="kaelri/hy-mt2:1.8b"):
     url = "http://localhost:11434/api/chat"
+    source_phrase = f" from {original_language}" if original_language else ""
     data = {
         "model": model,
         "messages": [
             {
                 "role": "system",
-                "content": f"Translate the input text into {language}.\n- Output only the translation.\n- Preserve original formatting exactly (line breaks, spacing, paragraphs).\n- Do not modify HTML tags, placeholders, code, URLs, or special tokens.\n- Do not add explanations, comments, or extra text.\n- Keep meaning faithful and complete."
+                "content": f"Translate the input text{source_phrase} into {language}.\n- Output only the translation.\n- Preserve original formatting exactly (line breaks, spacing, paragraphs).\n- Do not modify HTML tags, placeholders, code, URLs, or special tokens.\n- Do not add explanations, comments, or extra text.\n- Keep meaning faithful and complete."
             },
             {
                 "role": "user",
@@ -36,18 +37,19 @@ def translate_text_ollama(text, language="Brazilian Portuguese", model="kaelri/h
         print(f"\n⚠️ Error calling Ollama for '{text}': {e}. Using original text.")
         return text
 
-def translate_batch_ollama(lines, language="Brazilian Portuguese", model="kaelri/hy-mt2:1.8b"):
+def translate_batch_ollama(lines, language="Brazilian Portuguese", original_language=None, model="kaelri/hy-mt2:1.8b"):
     prompt_lines = [f"{i+1}: {line}" for i, line in enumerate(lines)]
     prompt_content = "\n".join(prompt_lines)
     
     url = "http://localhost:11434/api/chat"
+    source_phrase = f" from {original_language}" if original_language else ""
     data = {
         "model": model,
         "messages": [
             {
                 "role": "system",
                 "content": (
-                    f"Translate the following numbered lines into {language}.\n"
+                    f"Translate the following numbered lines{source_phrase} into {language}.\n"
                     "- Maintain the exact numbering format (e.g., '1: Translation') in your output.\n"
                     "- Output only the numbered translations, one per line.\n"
                     "- Do not add any extra text, explanations, or introductory remarks.\n"
@@ -157,6 +159,56 @@ def translate_mkv(mkv_path, language="Brazilian Portuguese"):
         f.write(srt.compose(original_subs))
         
     print(f"\nSuccess! Subtitle in {language} saved to: {output_file}")
+
+
+def translate_file(file_path, target_language="Brazilian Portuguese", original_language=None):
+    if not os.path.exists(file_path):
+        print(f"Error: The file '{file_path}' was not found.")
+        sys.exit(1)
+        
+    base_name = os.path.splitext(file_path)[0]
+    lang_suffix = target_language.lower().replace(" ", "_")
+    output_file = f"{base_name}_{lang_suffix}.srt"
+    
+    print(f"1. Reading subtitle file '{file_path}'...")
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    original_subs = list(srt.parse(content))
+    total_subs = len(original_subs)
+    batch_size = 10
+    
+    source_info = f" from {original_language}" if original_language else ""
+    print(f"\n2. Translating {total_subs} lines{source_info} to {target_language} using Ollama in batches of {batch_size} (kaelri/hy-mt2:1.8b)...")
+    
+    idx = 0
+    while idx < total_subs:
+        current_batch = original_subs[idx : idx + batch_size]
+        lines_to_translate = [leg.content.replace('\n', ' ') for leg in current_batch]
+        
+        try:
+            # Try to translate the whole batch at once
+            translations = translate_batch_ollama(lines_to_translate, language=target_language, original_language=original_language)
+            for i, trans in enumerate(translations):
+                current_batch[i].content = trans
+        except Exception as e:
+            # Fallback to line-by-line translation if the batch fails or is misformatted
+            print(f"\n⚠️ Batch translation failed (Index {idx} to {idx + len(current_batch)}): {e}. Retrying line-by-line...")
+            for leg in current_batch:
+                texto_original = leg.content.replace('\n', ' ')
+                leg.content = translate_text_ollama(texto_original, language=target_language, original_language=original_language)
+        
+        idx += len(current_batch)
+        progress = (idx / total_subs) * 100
+        print(f"-> Progress: {progress:.1f}% ({idx}/{total_subs} lines translated)...", end='\r')
+        sys.stdout.flush()
+
+    print(f"\n\n3. Writing new subtitle in {target_language}...")
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(srt.compose(original_subs))
+        
+    print(f"\nSuccess! Subtitle in {target_language} saved to: {output_file}")
+
 
 
 
