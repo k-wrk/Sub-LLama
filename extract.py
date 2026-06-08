@@ -33,9 +33,69 @@ def translate_text_ollama(text, language="Brazilian Portuguese", model="kaelri/h
             res_data = json.loads(response.read().decode('utf-8'))
             return res_data['message']['content'].strip()
     except Exception as e:
-        # Fallback to original text if translation fails
         print(f"\n⚠️ Error calling Ollama for '{text}': {e}. Using original text.")
         return text
+
+def translate_batch_ollama(lines, language="Brazilian Portuguese", model="kaelri/hy-mt2:1.8b"):
+    prompt_lines = [f"{i+1}: {line}" for i, line in enumerate(lines)]
+    prompt_content = "\n".join(prompt_lines)
+    
+    url = "http://localhost:11434/api/chat"
+    data = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    f"Translate the following numbered lines into {language}.\n"
+                    "- Maintain the exact numbering format (e.g., '1: Translation') in your output.\n"
+                    "- Output only the numbered translations, one per line.\n"
+                    "- Do not add any extra text, explanations, or introductory remarks.\n"
+                    "- Keep translations faithful and complete."
+                )
+            },
+            {
+                "role": "user",
+                "content": prompt_content
+            }
+        ],
+        "stream": False
+    }
+    
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(data).encode('utf-8'),
+        headers={'Content-Type': 'application/json'}
+    )
+    
+    with urllib.request.urlopen(req) as response:
+        res_data = json.loads(response.read().decode('utf-8'))
+        response_text = res_data['message']['content'].strip()
+        
+    # Parse the numbered lines
+    translated_map = {}
+    for line in response_text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        if ':' in line:
+            parts = line.split(':', 1)
+            try:
+                num = int(parts[0].strip())
+                text = parts[1].strip()
+                translated_map[num] = text
+            except ValueError:
+                continue
+                
+    # Reassemble results checking if all lines exist
+    results = []
+    for i in range(1, len(lines) + 1):
+        if i in translated_map:
+            results.append(translated_map[i])
+        else:
+            raise ValueError(f"Missing line index {i} in response")
+            
+    return results
 
 def translate_mkv(mkv_path, language="Brazilian Portuguese"):
     base_name = os.path.splitext(mkv_path)[0]
@@ -65,16 +125,31 @@ def translate_mkv(mkv_path, language="Brazilian Portuguese"):
     
     original_subs = list(srt.parse(content))
     total_subs = len(original_subs)
-    print(f"\n3. Translating {total_subs} lines to {language} using Ollama (kaelri/hy-mt2:1.8b)...")
+    batch_size = 10
     
-    for idx, leg in enumerate(original_subs):
-        original_text = leg.content.replace('\n', ' ')
-        translation = translate_text_ollama(original_text, language=language)
-        leg.content = translation
+    print(f"\n3. Translating {total_subs} lines to {language} using Ollama in batches of {batch_size} (kaelri/hy-mt2:1.8b)...")
+    
+    idx = 0
+    while idx < total_subs:
+        current_batch = original_subs[idx : idx + batch_size]
+        lines_to_translate = [leg.content.replace('\n', ' ') for leg in current_batch]
         
-        # Show progress in the terminal
-        progress = ((idx + 1) / total_subs) * 100
-        print(f"-> Progress: {progress:.1f}% ({idx + 1}/{total_subs} lines translated)...", end='\r')
+        try:
+            # Try to translate the whole batch at once
+            translations = translate_batch_ollama(lines_to_translate, language=language)
+            for i, trans in enumerate(translations):
+                current_batch[i].content = trans
+        except Exception as e:
+            # Fallback to line-by-line translation if the batch fails or is misformatted
+            # Print on a new line to avoid messing up the status indicator
+            print(f"\n⚠️ Batch translation failed (Index {idx} to {idx + len(current_batch)}): {e}. Retrying line-by-line...")
+            for leg in current_batch:
+                texto_original = leg.content.replace('\n', ' ')
+                leg.content = translate_text_ollama(texto_original, language=language)
+        
+        idx += len(current_batch)
+        progress = (idx / total_subs) * 100
+        print(f"-> Progress: {progress:.1f}% ({idx}/{total_subs} lines translated)...", end='\r')
         sys.stdout.flush()
 
     print(f"\n\n4. Writing new subtitle in {language}...")
