@@ -5,6 +5,84 @@ import srt
 import json
 import urllib.request
 
+LANGUAGE_CODES = {
+    # Américas & Europa Ocidental
+    "english": "en",
+    "spanish": "es",
+    "portuguese": "pt",
+    "brazilian portuguese": "pt-BR",
+    "french": "fr",
+    "german": "de",
+    "italian": "it",
+    "dutch": "nl",
+    "greek": "el",
+    "irish": "ga",
+    "icelandic": "is",
+    
+    # Europa Nórdica & Báltica
+    "swedish": "sv",
+    "norwegian": "no",
+    "danish": "da",
+    "finnish": "fi",
+    "estonian": "et",
+    "latvian": "lv",
+    "lithuanian": "lt",
+    
+    # Europa Oriental
+    "russian": "ru",
+    "polish": "pl",
+    "ukrainian": "uk",
+    "czech": "cs",
+    "romanian": "ro",
+    "hungarian": "hu",
+    "slovak": "sk",
+    "bulgarian": "bg",
+    "croatian": "hr",
+    "serbian": "sr",
+    "slovenian": "sl",
+    
+    # Ásia Oriental
+    "chinese": "zh",
+    "simplified chinese": "zh-Hans",
+    "traditional chinese": "zh-Hant",
+    "japanese": "ja",
+    "korean": "ko",
+    
+    # Sudeste Asiático
+    "vietnamese": "vi",
+    "thai": "th",
+    "indonesian": "id",
+    "malay": "ms",
+    "filipino": "fil",
+    "tagalog": "tl",
+    
+    # Ásia Central & Meridional
+    "hindi": "hi",
+    "bengali": "bn",
+    "punjabi": "pa",
+    "marathi": "mr",
+    "telugu": "te",
+    "tamil": "ta",
+    "gujarati": "gu",
+    "kannada": "kn",
+    "malayalam": "ml",
+    
+    # Oriente Médio & Outros
+    "arabic": "ar",
+    "turkish": "tr",
+    "hebrew": "he",
+    "persian": "fa",
+    "farsi": "fa",
+    "urdu": "ur"
+}
+
+def get_lang_suffix(language):
+    lang_lower = language.strip().lower()
+    if lang_lower in LANGUAGE_CODES:
+        return LANGUAGE_CODES[lang_lower]
+    return lang_lower.replace(" ", "_")
+
+
 def translate_text_ollama(text, language="Brazilian Portuguese", original_language=None, model="kaelri/hy-mt2:1.8b"):
     url = "http://localhost:11434/api/chat"
     source_phrase = f" from {original_language}" if original_language else ""
@@ -101,11 +179,11 @@ def translate_batch_ollama(lines, language="Brazilian Portuguese", original_lang
 
 def translate_mkv(mkv_path, language="Brazilian Portuguese"):
     base_name = os.path.splitext(mkv_path)[0]
-    en_file = f"{base_name}_en.srt"
+    en_file = f"{base_name}.en.srt"
     
-    # Define the suffix based on the language (e.g. _spanish.srt or _portuguese.srt)
-    lang_suffix = language.lower().replace(" ", "_")
-    output_file = f"{base_name}_{lang_suffix}.srt"
+    # Define the suffix based on the language in standard format (e.g. video.es.srt or video.pt-BR.srt)
+    lang_suffix = get_lang_suffix(language)
+    output_file = f"{base_name}.{lang_suffix}.srt"
     
     print("1. Extracting original subtitle with FFmpeg...")
     ffmpeg_cmd = ['ffmpeg', '-y', '-i', mkv_path, '-map', '0:s:0', en_file]
@@ -167,8 +245,8 @@ def translate_file(file_path, target_language="Brazilian Portuguese", original_l
         sys.exit(1)
         
     base_name = os.path.splitext(file_path)[0]
-    lang_suffix = target_language.lower().replace(" ", "_")
-    output_file = f"{base_name}_{lang_suffix}.srt"
+    lang_suffix = get_lang_suffix(target_language)
+    output_file = f"{base_name}.{lang_suffix}.srt"
     
     print(f"1. Reading subtitle file '{file_path}'...")
     with open(file_path, 'r', encoding='utf-8') as f:

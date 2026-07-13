@@ -8,34 +8,27 @@ def print_help():
     print("  sub-llama --file <subtitle.srt> [original_language] [target_language]")
     print("\nOptions:")
     print("  -h, --help     Show this help message and exit")
+    print("  -l, --languages List all languages with automatic VLC naming support")
     print("  --file         Translate a subtitle file directly instead of extracting from MKV")
     print("\nLanguages:")
     print("  You must pass languages in English (e.g. \"Brazilian Portuguese\" or Spanish).")
     print("  If a language name contains spaces, enclose it in double quotes, e.g.: \"Brazilian Portuguese\".")
-    print("\n20 Most Common Languages (How to pass as parameter):")
-    print("  1. English")
-    print("  2. Spanish")
-    print("  3. French")
-    print("  4. German")
-    print("  5. Chinese")
-    print("  6. Japanese")
-    print("  7. Portuguese")
-    print("  8. \"Brazilian Portuguese\"")
-    print("  9. Italian")
-    print("  10. Russian")
-    print("  11. Korean")
-    print("  12. Arabic")
-    print("  13. Hindi")
-    print("  14. Turkish")
-    print("  15. Dutch")
-    print("  16. Polish")
-    print("  17. Vietnamese")
-    print("  18. Swedish")
-    print("  19. Norwegian")
-    print("  20. Danish")
     print("\nExamples:")
     print("  sub-llama movie.mkv Spanish")
     print("  sub-llama --file subtitle.srt English \"Brazilian Portuguese\"")
+    print("  sub-llama --languages (to view all supported languages)")
+
+def print_languages():
+    from extract import LANGUAGE_CODES
+    print("Languages with automatic VLC naming support (suffix):")
+    print("-" * 55)
+    for lang, suffix in sorted(LANGUAGE_CODES.items()):
+        display_name = " ".join(word.capitalize() for word in lang.split())
+        print(f"  {display_name:<25} -> .{suffix}.srt")
+    print("-" * 55)
+    print("\nNote: You can pass any other language. The translation model")
+    print("supports many more languages. If a language is not on this list,")
+    print("it will fallback to a slugified name suffix (e.g., '.finnish.srt').")
 
 def main():
     if len(sys.argv) < 2:
@@ -45,6 +38,10 @@ def main():
         
     if sys.argv[1] in ("-h", "--help"):
         print_help()
+        sys.exit(0)
+        
+    if sys.argv[1] in ("-l", "--languages"):
+        print_languages()
         sys.exit(0)
         
     if sys.argv[1] == "--file":

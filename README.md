@@ -66,36 +66,40 @@ and environments easily.
 
 Once installed, you can run the translation script using the registered command.
 
-To view all options, examples, and the list of common languages, run:
+### Getting Help & Listing Languages
 
-```bash
-sub-llama --help
-```
+- **Help Menu**: To view all options, run:
+  ```bash
+  sub-llama --help
+  ```
+- **List Mapped Languages**: To view all 50+ languages with automatic VLC naming support, run:
+  ```bash
+  sub-llama --languages
+  ```
 
 ### 1. Translating from Video Files (MKV)
 
-Extracts subtitles automatically and translates them:
+Extracts subtitles automatically and translates them. Output files use standard language codes as suffixes (matching the VLC automatic subtitle loading pattern):
 
 ```bash
 sub-llama path/to/your/video.mkv [target_language]
 ```
 
-By default, the target language is `Brazilian Portuguese`. You can pass any
-target language in English (e.g., `Spanish`, `French`, `German`):
+By default, the target language is `Brazilian Portuguese`. You can pass any target language in English (e.g., `Spanish`, `French`, `German`):
 
 ```bash
-# Translates to Brazilian Portuguese by default (saves to video_brazilian_portuguese.srt)
+# Translates to Brazilian Portuguese by default (saves to video.pt-BR.srt)
 sub-llama path/to/your/video.mkv
 
-# Translates to Spanish (saves to video_spanish.srt)
+# Translates to Spanish (saves to video.es.srt)
 sub-llama path/to/your/video.mkv Spanish
 ```
 
 This will:
 
-1. Extract the original English subtitle tracks to `path/to/your/video_en.srt`.
+1. Extract the original English subtitle tracks to `path/to/your/video.en.srt`.
 2. Translate all subtitle lines to your target language.
-3. Save the translated subtitles into `path/to/your/video_<language>.srt`.
+3. Save the translated subtitles into `path/to/your/video.<lang_code>.srt`.
 
 ### 2. Translating Subtitle Files Directly
 
@@ -108,13 +112,13 @@ sub-llama --file path/to/subtitle.srt [original_language] [target_language]
 If only one language is specified after the filename, it is treated as the target language:
 
 ```bash
-# Translates to Brazilian Portuguese by default (saves to subtitle_brazilian_portuguese.srt)
+# Translates to Brazilian Portuguese by default (saves to subtitle.pt-BR.srt)
 sub-llama --file path/to/subtitle.srt
 
-# Translates to Spanish (saves to subtitle_spanish.srt)
+# Translates to Spanish (saves to subtitle.es.srt)
 sub-llama --file path/to/subtitle.srt Spanish
 
-# Translates from French to Spanish (saves to subtitle_spanish.srt)
+# Translates from French to Spanish (saves to subtitle.es.srt)
 sub-llama --file path/to/subtitle.srt French Spanish
 ```
 
