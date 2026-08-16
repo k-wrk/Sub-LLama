@@ -6,7 +6,7 @@ import json
 import urllib.request
 
 LANGUAGE_CODES = {
-    # Américas & Europa Ocidental
+    # Americas & Western Europe
     "english": "en",
     "spanish": "es",
     "portuguese": "pt",
@@ -19,7 +19,7 @@ LANGUAGE_CODES = {
     "irish": "ga",
     "icelandic": "is",
     
-    # Europa Nórdica & Báltica
+    # Nordic & Baltic Europe
     "swedish": "sv",
     "norwegian": "no",
     "danish": "da",
@@ -28,7 +28,7 @@ LANGUAGE_CODES = {
     "latvian": "lv",
     "lithuanian": "lt",
     
-    # Europa Oriental
+    # Eastern Europe
     "russian": "ru",
     "polish": "pl",
     "ukrainian": "uk",
@@ -41,14 +41,14 @@ LANGUAGE_CODES = {
     "serbian": "sr",
     "slovenian": "sl",
     
-    # Ásia Oriental
+    # East Asia
     "chinese": "zh",
     "simplified chinese": "zh-Hans",
     "traditional chinese": "zh-Hant",
     "japanese": "ja",
     "korean": "ko",
     
-    # Sudeste Asiático
+    # Southeast Asia
     "vietnamese": "vi",
     "thai": "th",
     "indonesian": "id",
@@ -56,7 +56,7 @@ LANGUAGE_CODES = {
     "filipino": "fil",
     "tagalog": "tl",
     
-    # Ásia Central & Meridional
+    # Central & South Asia
     "hindi": "hi",
     "bengali": "bn",
     "punjabi": "pa",
@@ -67,7 +67,7 @@ LANGUAGE_CODES = {
     "kannada": "kn",
     "malayalam": "ml",
     
-    # Oriente Médio & Outros
+    # Middle East & Others
     "arabic": "ar",
     "turkish": "tr",
     "hebrew": "he",
@@ -177,7 +177,23 @@ def translate_batch_ollama(lines, language="Brazilian Portuguese", original_lang
             
     return results
 
-def translate_mkv(mkv_path, language="Brazilian Portuguese"):
+def list_subtitle_tracks(video_path):
+    cmd = [
+        'ffprobe', '-v', 'error',
+        '-show_entries', 'stream=index:stream_tags=language,title',
+        '-select_streams', 's',
+        '-of', 'json',
+        video_path
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+        return data.get('streams', [])
+    except Exception:
+        return []
+
+
+def translate_mkv(mkv_path, language="Brazilian Portuguese", track_index=0):
     base_name = os.path.splitext(mkv_path)[0]
     en_file = f"{base_name}.en.srt"
     
@@ -185,8 +201,18 @@ def translate_mkv(mkv_path, language="Brazilian Portuguese"):
     lang_suffix = get_lang_suffix(language)
     output_file = f"{base_name}.{lang_suffix}.srt"
     
+    streams = list_subtitle_tracks(mkv_path)
+    if streams:
+        print("\n📽️ Subtitle tracks found in video:")
+        for i, s in enumerate(streams):
+            title = s.get('tags', {}).get('title', 'No Title')
+            lang = s.get('tags', {}).get('language', 'unknown')
+            print(f"  Track {i}: [{lang}] {title}")
+        print(f"-> Using Track {track_index} (Use -t or --track to select another)\n")
+    
     print("1. Extracting original subtitle with FFmpeg...")
-    ffmpeg_cmd = ['ffmpeg', '-y', '-i', mkv_path, '-map', '0:s:0', en_file]
+    ffmpeg_cmd = ['ffmpeg', '-y', '-i', mkv_path, '-map', f'0:s:{track_index}', en_file]
+
     
     try:
         subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -224,8 +250,8 @@ def translate_mkv(mkv_path, language="Brazilian Portuguese"):
             # Print on a new line to avoid messing up the status indicator
             print(f"\n⚠️ Batch translation failed (Index {idx} to {idx + len(current_batch)}): {e}. Retrying line-by-line...")
             for leg in current_batch:
-                texto_original = leg.content.replace('\n', ' ')
-                leg.content = translate_text_ollama(texto_original, language=language)
+                original_text = leg.content.replace('\n', ' ')
+                leg.content = translate_text_ollama(original_text, language=language)
         
         idx += len(current_batch)
         progress = (idx / total_subs) * 100
@@ -237,6 +263,7 @@ def translate_mkv(mkv_path, language="Brazilian Portuguese"):
         f.write(srt.compose(original_subs))
         
     print(f"\nSuccess! Subtitle in {language} saved to: {output_file}")
+    return output_file
 
 
 def translate_file(file_path, target_language="Brazilian Portuguese", original_language=None):
@@ -273,8 +300,8 @@ def translate_file(file_path, target_language="Brazilian Portuguese", original_l
             # Fallback to line-by-line translation if the batch fails or is misformatted
             print(f"\n⚠️ Batch translation failed (Index {idx} to {idx + len(current_batch)}): {e}. Retrying line-by-line...")
             for leg in current_batch:
-                texto_original = leg.content.replace('\n', ' ')
-                leg.content = translate_text_ollama(texto_original, language=target_language, original_language=original_language)
+                original_text = leg.content.replace('\n', ' ')
+                leg.content = translate_text_ollama(original_text, language=target_language, original_language=original_language)
         
         idx += len(current_batch)
         progress = (idx / total_subs) * 100
@@ -286,6 +313,108 @@ def translate_file(file_path, target_language="Brazilian Portuguese", original_l
         f.write(srt.compose(original_subs))
         
     print(f"\nSuccess! Subtitle in {target_language} saved to: {output_file}")
+    return output_file
+
+
+def get_video_duration(video_path):
+    cmd = [
+        'ffprobe', '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        video_path
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return float(result.stdout.strip())
+    except Exception:
+        return None
+
+
+def embed_subtitle(video_path, subtitle_path, language="Brazilian Portuguese"):
+    if not os.path.exists(video_path):
+        print(f"Error: The video file '{video_path}' was not found.")
+        return False
+    if not os.path.exists(subtitle_path):
+        print(f"Error: The subtitle file '{subtitle_path}' was not found.")
+        return False
+
+    base, ext = os.path.splitext(video_path)
+    output_path = f"{base}.embedded{ext}"
+    
+    lang_code = get_lang_suffix(language)
+    s_codec = "mov_text" if ext.lower() == ".mp4" else "srt"
+    
+    total_seconds = get_video_duration(video_path)
+    
+    print(f"\n3. Embedding subtitle into {output_path} (Language: {language}, Code: {lang_code})...")
+    
+    ffmpeg_cmd = [
+        'ffmpeg', '-y',
+        '-hide_banner',
+        '-loglevel', 'error',
+        '-progress', '-',
+        '-i', video_path,
+        '-i', subtitle_path,
+        '-map', '0:v', '-map', '0:a?', '-map', '1:s',
+        '-c', 'copy',
+        f'-c:s', s_codec,
+        f'-metadata:s:s:0', f'language={lang_code}',
+        output_path
+    ]
+    
+    try:
+        process = subprocess.Popen(
+            ffmpeg_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1
+        )
+        
+        progress_info = {}
+        for line in process.stdout:
+            line = line.strip()
+            if '=' in line:
+                key, val = line.split('=', 1)
+                progress_info[key] = val
+                
+            if line.startswith('progress='):
+                out_time = progress_info.get('out_time', '00:00:00').split('.')[0]
+                speed = progress_info.get('speed', '0.0x')
+                
+                if total_seconds:
+                    try:
+                        out_time_us = int(progress_info.get('out_time_us', 0))
+                        current_seconds = out_time_us / 1000000.0
+                        percent = min(100.0, max(0.0, (current_seconds / total_seconds) * 100))
+                        
+                        bar_length = 30
+                        filled_length = int(round(bar_length * percent / 100))
+                        bar = '█' * filled_length + '░' * (bar_length - filled_length)
+                        
+                        sys.stdout.write(f"\r[{bar}] {percent:.1f}% | Speed: {speed} | Time: {out_time}")
+                    except Exception:
+                        sys.stdout.write(f"\rMuxing... Speed: {speed} | Time: {out_time}")
+                else:
+                    sys.stdout.write(f"\rMuxing... Speed: {speed} | Time: {out_time}")
+                sys.stdout.flush()
+            
+        process.wait()
+        if process.returncode != 0:
+            stderr_output = process.stderr.read()
+            raise subprocess.CalledProcessError(process.returncode, ffmpeg_cmd, stderr=stderr_output)
+            
+        print(f"\n\nSuccess! Subtitled video saved to: {output_path}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"\n❌ Error embedding subtitle: {e.stderr if hasattr(e, 'stderr') else e}")
+        return False
+    except FileNotFoundError:
+        print("\n❌ Error: FFmpeg is not installed on the system.")
+        return False
+
+
+
 
 
 

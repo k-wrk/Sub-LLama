@@ -10,12 +10,14 @@ any target language using a local Ollama instance running the
 
 - **Local & Private:** Zero external API calls for translation. Everything runs
   on your machine.
-- **Auto-Extraction:** Uses FFmpeg to extract embedded English subtitles from
-  MKV files.
+- **Auto-Extraction:** Uses FFmpeg to extract embedded subtitles from MKV files.
 - **Optimized Translation:** Uses the fast and efficient `kaelri/hy-mt2:1.8b`
   model designed specifically for multilingual translations.
 - **Accurate Reconstruction:** Automatically compiles the translated subtitle
   lines back into standard `.srt` format, preserving original timings.
+- **Progress Bar:** Real-time visual progress bar displayed in the terminal.
+- **Subtitle Embedding (Muxing):** Mux the translated subtitle directly into the video container as a selectable soft subtitle track.
+- **Multi-Track Support:** Detect and select specific subtitle tracks from MKV videos with multiple subtitle streams.
 
 ---
 
@@ -24,7 +26,7 @@ any target language using a local Ollama instance running the
 Before using `Sub-LLama`, make sure you have the following installed on your
 system:
 
-1. **FFmpeg** (required to extract subtitles from MKV files):
+1. **FFmpeg & FFprobe** (required to extract/embed subtitles and query video duration):
    - **macOS:** `brew install ffmpeg`
    - **Ubuntu/Debian:** `sudo apt install ffmpeg`
    - **Windows:** Download from the official website or install via
@@ -60,6 +62,12 @@ and environments easily.
    pip install -e .
    ```
 
+3. **Global CLI Installation:**
+   To make the `sub-llama` command available globally:
+   ```bash
+   uv tool install --editable .
+   ```
+
 ---
 
 ## Usage
@@ -77,49 +85,37 @@ Once installed, you can run the translation script using the registered command.
   sub-llama --languages
   ```
 
-### 1. Translating from Video Files (MKV)
+---
 
-Extracts subtitles automatically and translates them. Output files use standard language codes as suffixes (matching the VLC automatic subtitle loading pattern):
+### Command Examples
 
+#### 1. List Subtitle Tracks inside a Video (Without Translating)
 ```bash
-sub-llama path/to/your/video.mkv [target_language]
+sub-llama --list-tracks path/to/your/video.mkv
 ```
 
-By default, the target language is `Brazilian Portuguese`. You can pass any target language in English (e.g., `Spanish`, `French`, `German`):
-
+#### 2. Translating and Automatically Embedding
+Extracts subtitles, translates them, and muxes them back into the video:
 ```bash
-# Translates to Brazilian Portuguese by default (saves to video.pt-BR.srt)
-sub-llama path/to/your/video.mkv
-
-# Translates to Spanish (saves to video.es.srt)
-sub-llama path/to/your/video.mkv Spanish
+sub-llama path/to/your/video.mkv --embed
 ```
 
-This will:
+#### 3. Select a Specific Subtitle Track to Translate
+If the video has multiple subtitle tracks (like forced, full, SDH) and you want to select a specific track index (e.g. index 1) and embed it:
+```bash
+sub-llama path/to/your/video.mkv "Brazilian Portuguese" --track 1 --embed
+```
 
-1. Extract the original English subtitle tracks to `path/to/your/video.en.srt`.
-2. Translate all subtitle lines to your target language.
-3. Save the translated subtitles into `path/to/your/video.<lang_code>.srt`.
+#### 4. Embedding an Existing Subtitle File (Muxing Only)
+Embed an existing `.srt` file into a video container without re-encoding (instantaneous, with progress bar):
+```bash
+sub-llama --embed-only path/to/your/video.mp4 path/to/your/subtitle.srt "Brazilian Portuguese"
+```
 
-### 2. Translating Subtitle Files Directly
-
+#### 5. Translating Subtitle Files Directly
 You can also translate an existing subtitle file (`.srt`) directly:
-
 ```bash
 sub-llama --file path/to/subtitle.srt [original_language] [target_language]
-```
-
-If only one language is specified after the filename, it is treated as the target language:
-
-```bash
-# Translates to Brazilian Portuguese by default (saves to subtitle.pt-BR.srt)
-sub-llama --file path/to/subtitle.srt
-
-# Translates to Spanish (saves to subtitle.es.srt)
-sub-llama --file path/to/subtitle.srt Spanish
-
-# Translates from French to Spanish (saves to subtitle.es.srt)
-sub-llama --file path/to/subtitle.srt French Spanish
 ```
 
 ---

@@ -1526,9 +1526,9 @@ wheels = [
 ]
 
 [[package]]
-name = "subs2pt"
+name = "sub-llama"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "argostranslate" },
     { name = "ctranslate2" },

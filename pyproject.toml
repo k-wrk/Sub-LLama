@@ -18,3 +18,7 @@ dependencies = [
 sub-llama = "main:main"
 [tool.setuptools]
 py-modules = ["main", "extract"]
+
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
