@@ -16,8 +16,9 @@ any target language using a local Ollama instance running the
 - **Accurate Reconstruction:** Automatically compiles the translated subtitle
   lines back into standard `.srt` format, preserving original timings.
 - **Progress Bar:** Real-time visual progress bar displayed in the terminal.
-- **Subtitle Embedding (Muxing):** Mux the translated subtitle directly into the video container as a selectable soft subtitle track.
+- **Subtitle Embedding (Muxing):** Mux the translated subtitle directly into the video container as a selectable soft subtitle track (enabled by default).
 - **Multi-Track Support:** Detect and select specific subtitle tracks from MKV videos with multiple subtitle streams.
+- **Customizable:** Configure translation model, batch sizes, and remote Ollama hosts.
 
 ---
 
@@ -70,52 +71,96 @@ and environments easily.
 
 ---
 
-## Usage
+## CLI Options & Flags
 
-Once installed, you can run the translation script using the registered command.
-
-### Getting Help & Listing Languages
-
-- **Help Menu**: To view all options, run:
-  ```bash
-  sub-llama --help
-  ```
-- **List Mapped Languages**: To view all 50+ languages with automatic VLC naming support, run:
-  ```bash
-  sub-llama --languages
-  ```
+| Flag | Short | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `--help` | `-h` | Show help message and exit | - |
+| `--languages` | `-l` | List mapped languages with automatic VLC suffix naming | - |
+| `--list-tracks` | `-lt` | List all subtitle tracks in a video file and exit | - |
+| `--file` | `-f` | Translate a `.srt` subtitle file directly | - |
+| `--embed-only` | `-eo` | Mux/embed an existing subtitle file into a video without translating | - |
+| `--track` | `-t` | Subtitle track index to extract from MKV | `0` |
+| `--no-embed` | `-n`, `-ne` | Disable embedding subtitle into video container (extract & translate only) | Disabled (Embed is ON) |
+| `--in-place` | `-i` | Overwrite the original video file when embedding | `False` (`.embedded` file) |
+| `--model` | `-m` | Ollama model to use for translation | `kaelri/hy-mt2:1.8b` |
+| `--batch-size` | `-b` | Number of subtitle lines translated per batch | `30` |
+| `--workers` | `-w` | Number of concurrent batch translation threads | `3` |
+| `--host` | - | Ollama server URL/host | `http://localhost:11434` |
 
 ---
 
-### Command Examples
+## Performance & Speed Optimizations
 
-#### 1. List Subtitle Tracks inside a Video (Without Translating)
+`Sub-LLama` includes several built-in optimizations for maximum translation speed:
+- **Parallel Multi-threading (`-w` / `--workers`):** Dispatches multiple subtitle batches concurrently to Ollama.
+- **Batched Requests (`-b` / `--batch-size`):** Translates 30+ lines per network roundtrip, significantly reducing prompt evaluation overhead.
+- **Deterministic Sampling:** Fixed low temperature (`0.1`) for faster and faithful translation decoding.
+- **Untranslatable Fast-path:** Automatically skips LLM inference for sound effects, music notes (`♪`), and empty/number-only lines.
+- **Memory Keep-Alive:** Keeps the model loaded in Ollama VRAM between batches to eliminate reload latency.
+
+---
+
+## Usage Examples
+
+### 1. Translating a Video (Default: Auto-embeds subtitle & multi-threaded)
+Extracts the subtitle, translates to Brazilian Portuguese (default), and embeds it in a new `.embedded.mkv` file:
 ```bash
-sub-llama --list-tracks path/to/your/video.mkv
+sub-llama movie.mkv
 ```
 
-#### 2. Translating and Automatically Embedding
-Extracts subtitles, translates them, and muxes them back into the video:
+Translate to another target language:
 ```bash
-sub-llama path/to/your/video.mkv --embed
+sub-llama movie.mkv Spanish
 ```
 
-#### 3. Select a Specific Subtitle Track to Translate
-If the video has multiple subtitle tracks (like forced, full, SDH) and you want to select a specific track index (e.g. index 1) and embed it:
+### 2. High-Performance / Turbo Mode (`-w` and `-b`)
+Maximize throughput on multi-core systems / GPUs with larger batches and more worker threads:
 ```bash
-sub-llama path/to/your/video.mkv "Brazilian Portuguese" --track 1 --embed
+sub-llama movie.mkv "Brazilian Portuguese" -w 4 -b 40
 ```
 
-#### 4. Embedding an Existing Subtitle File (Muxing Only)
-Embed an existing `.srt` file into a video container without re-encoding (instantaneous, with progress bar):
+### 3. Overwriting Original Video File (`-i` / `--in-place`)
+Muxes the translated subtitle directly into the original video file:
 ```bash
-sub-llama --embed-only path/to/your/video.mp4 path/to/your/subtitle.srt "Brazilian Portuguese"
+sub-llama movie.mkv Spanish -i
 ```
 
-#### 5. Translating Subtitle Files Directly
-You can also translate an existing subtitle file (`.srt`) directly:
+### 4. Extract and Translate Only (`-n` / `--no-embed`)
+Generates the `.srt` file alongside the video without embedding it back into the container:
 ```bash
-sub-llama --file path/to/subtitle.srt [original_language] [target_language]
+sub-llama movie.mkv Spanish -n
+```
+
+### 5. Selecting a Specific Subtitle Track (`-t` / `--track`)
+List tracks first:
+```bash
+sub-llama -lt movie.mkv
+```
+Translate using a specific track index (e.g., track 1):
+```bash
+sub-llama movie.mkv "Brazilian Portuguese" -t 1 -i
+```
+
+### 6. Translating Subtitle Files Directly (`-f` / `--file`)
+Translate an existing `.srt` file:
+```bash
+sub-llama -f subtitle.srt "Brazilian Portuguese"
+```
+Specifying source and target languages:
+```bash
+sub-llama -f subtitle.srt English "Brazilian Portuguese"
+```
+
+### 7. Embedding an Existing Subtitle File Only (`-eo` / `--embed-only`)
+Embed an existing `.srt` file into a video container without re-encoding:
+```bash
+sub-llama -eo movie.mp4 subtitle.srt "Brazilian Portuguese" -i
+```
+
+### 8. Custom Model, Batch Size & Ollama Host
+```bash
+sub-llama movie.mkv Spanish -m "kaelri/hy-mt2:1.8b" -b 40 -w 4 --host "http://localhost:11434"
 ```
 
 ---

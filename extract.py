@@ -1,7 +1,6 @@
 import subprocess
 import os
 import sys
-import srt
 import json
 import urllib.request
 
@@ -83,11 +82,42 @@ def get_lang_suffix(language):
     return lang_lower.replace(" ", "_")
 
 
-def translate_text_ollama(text, language="Brazilian Portuguese", original_language=None, model="kaelri/hy-mt2:1.8b"):
-    url = "http://localhost:11434/api/chat"
+def get_ollama_url(host=None):
+    if not host:
+        host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    if not host.startswith("http://") and not host.startswith("https://"):
+        host = f"http://{host}"
+    return host.rstrip("/") + "/api/chat"
+
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+
+def is_untranslatable(text):
+    """Check if a line contains only music notes, sound effect tags, punctuation, or numbers."""
+    cleaned = text.strip()
+    if not cleaned:
+        return True
+    # Only numbers and basic punctuation
+    if re.fullmatch(r'[\d\s\.,;:!?\-\—\–\(\)\[\]"\'\/\\]+', cleaned):
+        return True
+    # Sound tags like [music], (applause), ♪ music ♪, etc.
+    if re.fullmatch(r'[\[\(\{\<♪♫#\*].*?[\]\)\}\>♪♫#\*]', cleaned):
+        return True
+    return False
+
+def translate_text_ollama(text, language="Brazilian Portuguese", original_language=None, model="kaelri/hy-mt2:1.8b", host=None):
+    if is_untranslatable(text):
+        return text
+
+    url = get_ollama_url(host)
     source_phrase = f" from {original_language}" if original_language else ""
     data = {
         "model": model,
+        "keep_alive": "15m",
+        "options": {
+            "temperature": 0.1
+        },
         "messages": [
             {
                 "role": "system",
@@ -115,14 +145,22 @@ def translate_text_ollama(text, language="Brazilian Portuguese", original_langua
         print(f"\n⚠️ Error calling Ollama for '{text}': {e}. Using original text.")
         return text
 
-def translate_batch_ollama(lines, language="Brazilian Portuguese", original_language=None, model="kaelri/hy-mt2:1.8b"):
+def translate_batch_ollama(lines, language="Brazilian Portuguese", original_language=None, model="kaelri/hy-mt2:1.8b", host=None):
+    # If all lines in the batch are untranslatable, return directly
+    if all(is_untranslatable(l) for l in lines):
+        return list(lines)
+
     prompt_lines = [f"{i+1}: {line}" for i, line in enumerate(lines)]
     prompt_content = "\n".join(prompt_lines)
     
-    url = "http://localhost:11434/api/chat"
+    url = get_ollama_url(host)
     source_phrase = f" from {original_language}" if original_language else ""
     data = {
         "model": model,
+        "keep_alive": "15m",
+        "options": {
+            "temperature": 0.1
+        },
         "messages": [
             {
                 "role": "system",
@@ -177,6 +215,71 @@ def translate_batch_ollama(lines, language="Brazilian Portuguese", original_lang
             
     return results
 
+
+def run_translation_pipeline(original_subs, language="Brazilian Portuguese", original_language=None, model="kaelri/hy-mt2:1.8b", batch_size=30, workers=3, host=None):
+    total_subs = len(original_subs)
+    batch_size = max(1, batch_size)
+    workers = max(1, workers)
+
+    # Prepare batches
+    batches = []
+    idx = 0
+    while idx < total_subs:
+        end_idx = min(idx + batch_size, total_subs)
+        lines = [leg.content.replace('\n', ' ') for leg in original_subs[idx:end_idx]]
+        batches.append((idx, end_idx, lines))
+        idx = end_idx
+
+    translated_count = 0
+    lock = threading.Lock()
+
+    def process_batch(batch_info):
+        start_i, end_i, lines_to_translate = batch_info
+        try:
+            translations = translate_batch_ollama(
+                lines_to_translate,
+                language=language,
+                original_language=original_language,
+                model=model,
+                host=host
+            )
+        except Exception as e:
+            # Fallback to line-by-line translation if the batch fails
+            translations = []
+            for line in lines_to_translate:
+                if is_untranslatable(line):
+                    translations.append(line)
+                else:
+                    translations.append(
+                        translate_text_ollama(
+                            line,
+                            language=language,
+                            original_language=original_language,
+                            model=model,
+                            host=host
+                        )
+                    )
+        return start_i, end_i, translations
+
+    # Execute in parallel with progress updates
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(process_batch, b) for b in batches]
+        for future in as_completed(futures):
+            start_i, end_i, translations = future.result()
+            for i, trans in enumerate(translations):
+                original_subs[start_i + i].content = trans
+
+            with lock:
+                translated_count += len(translations)
+                progress = (translated_count / total_subs) * 100
+                bar_length = 30
+                filled = int(round(bar_length * progress / 100))
+                bar = '█' * filled + '░' * (bar_length - filled)
+                print(f"\r[{bar}] {progress:.1f}% ({translated_count}/{total_subs} lines translated)...", end='', flush=True)
+
+    print()
+
+
 def list_subtitle_tracks(video_path):
     cmd = [
         'ffprobe', '-v', 'error',
@@ -193,7 +296,7 @@ def list_subtitle_tracks(video_path):
         return []
 
 
-def translate_mkv(mkv_path, language="Brazilian Portuguese", track_index=0):
+def translate_mkv(mkv_path, language="Brazilian Portuguese", track_index=0, model="kaelri/hy-mt2:1.8b", batch_size=30, workers=3, host=None):
     base_name = os.path.splitext(mkv_path)[0]
     en_file = f"{base_name}.en.srt"
     
@@ -213,7 +316,6 @@ def translate_mkv(mkv_path, language="Brazilian Portuguese", track_index=0):
     print("1. Extracting original subtitle with FFmpeg...")
     ffmpeg_cmd = ['ffmpeg', '-y', '-i', mkv_path, '-map', f'0:s:{track_index}', en_file]
 
-    
     try:
         subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"-> English subtitle extracted: {en_file}")
@@ -226,39 +328,25 @@ def translate_mkv(mkv_path, language="Brazilian Portuguese", track_index=0):
         sys.exit(1)
     
     print("\n2. Reading subtitle file...")
+    import srt
     with open(en_file, 'r', encoding='utf-8') as f:
         content = f.read()
     
     original_subs = list(srt.parse(content))
     total_subs = len(original_subs)
-    batch_size = 10
     
-    print(f"\n3. Translating {total_subs} lines to {language} using Ollama in batches of {batch_size} (kaelri/hy-mt2:1.8b)...")
-    
-    idx = 0
-    while idx < total_subs:
-        current_batch = original_subs[idx : idx + batch_size]
-        lines_to_translate = [leg.content.replace('\n', ' ') for leg in current_batch]
-        
-        try:
-            # Try to translate the whole batch at once
-            translations = translate_batch_ollama(lines_to_translate, language=language)
-            for i, trans in enumerate(translations):
-                current_batch[i].content = trans
-        except Exception as e:
-            # Fallback to line-by-line translation if the batch fails or is misformatted
-            # Print on a new line to avoid messing up the status indicator
-            print(f"\n⚠️ Batch translation failed (Index {idx} to {idx + len(current_batch)}): {e}. Retrying line-by-line...")
-            for leg in current_batch:
-                original_text = leg.content.replace('\n', ' ')
-                leg.content = translate_text_ollama(original_text, language=language)
-        
-        idx += len(current_batch)
-        progress = (idx / total_subs) * 100
-        print(f"-> Progress: {progress:.1f}% ({idx}/{total_subs} lines translated)...", end='\r')
-        sys.stdout.flush()
+    print(f"\n3. Translating {total_subs} lines to {language} using Ollama (model: {model}, batch size: {batch_size}, workers: {workers})...")
+    run_translation_pipeline(
+        original_subs,
+        language=language,
+        original_language=None,
+        model=model,
+        batch_size=batch_size,
+        workers=workers,
+        host=host
+    )
 
-    print(f"\n\n4. Writing new subtitle in {language}...")
+    print(f"\n4. Writing new subtitle in {language}...")
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(srt.compose(original_subs))
         
@@ -266,7 +354,7 @@ def translate_mkv(mkv_path, language="Brazilian Portuguese", track_index=0):
     return output_file
 
 
-def translate_file(file_path, target_language="Brazilian Portuguese", original_language=None):
+def translate_file(file_path, target_language="Brazilian Portuguese", original_language=None, model="kaelri/hy-mt2:1.8b", batch_size=30, workers=3, host=None):
     if not os.path.exists(file_path):
         print(f"Error: The file '{file_path}' was not found.")
         sys.exit(1)
@@ -276,39 +364,26 @@ def translate_file(file_path, target_language="Brazilian Portuguese", original_l
     output_file = f"{base_name}.{lang_suffix}.srt"
     
     print(f"1. Reading subtitle file '{file_path}'...")
+    import srt
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
     
     original_subs = list(srt.parse(content))
     total_subs = len(original_subs)
-    batch_size = 10
     
     source_info = f" from {original_language}" if original_language else ""
-    print(f"\n2. Translating {total_subs} lines{source_info} to {target_language} using Ollama in batches of {batch_size} (kaelri/hy-mt2:1.8b)...")
-    
-    idx = 0
-    while idx < total_subs:
-        current_batch = original_subs[idx : idx + batch_size]
-        lines_to_translate = [leg.content.replace('\n', ' ') for leg in current_batch]
-        
-        try:
-            # Try to translate the whole batch at once
-            translations = translate_batch_ollama(lines_to_translate, language=target_language, original_language=original_language)
-            for i, trans in enumerate(translations):
-                current_batch[i].content = trans
-        except Exception as e:
-            # Fallback to line-by-line translation if the batch fails or is misformatted
-            print(f"\n⚠️ Batch translation failed (Index {idx} to {idx + len(current_batch)}): {e}. Retrying line-by-line...")
-            for leg in current_batch:
-                original_text = leg.content.replace('\n', ' ')
-                leg.content = translate_text_ollama(original_text, language=target_language, original_language=original_language)
-        
-        idx += len(current_batch)
-        progress = (idx / total_subs) * 100
-        print(f"-> Progress: {progress:.1f}% ({idx}/{total_subs} lines translated)...", end='\r')
-        sys.stdout.flush()
+    print(f"\n2. Translating {total_subs} lines{source_info} to {target_language} using Ollama (model: {model}, batch size: {batch_size}, workers: {workers})...")
+    run_translation_pipeline(
+        original_subs,
+        language=target_language,
+        original_language=original_language,
+        model=model,
+        batch_size=batch_size,
+        workers=workers,
+        host=host
+    )
 
-    print(f"\n\n3. Writing new subtitle in {target_language}...")
+    print(f"\n3. Writing new subtitle in {target_language}...")
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(srt.compose(original_subs))
         
@@ -330,7 +405,7 @@ def get_video_duration(video_path):
         return None
 
 
-def embed_subtitle(video_path, subtitle_path, language="Brazilian Portuguese"):
+def embed_subtitle(video_path, subtitle_path, language="Brazilian Portuguese", in_place=False):
     if not os.path.exists(video_path):
         print(f"Error: The video file '{video_path}' was not found.")
         return False
@@ -342,12 +417,15 @@ def embed_subtitle(video_path, subtitle_path, language="Brazilian Portuguese"):
     output_path = f"{base}.embedded{ext}"
     
     lang_code = get_lang_suffix(language)
-    s_codec = "mov_text" if ext.lower() == ".mp4" else "srt"
+    s_codec = "mov_text" if ext.lower() == ".mp4" else "copy"
     
     total_seconds = get_video_duration(video_path)
     
     print(f"\n3. Embedding subtitle into {output_path} (Language: {language}, Code: {lang_code})...")
     
+    original_subs = list_subtitle_tracks(video_path)
+    new_sub_index = len(original_subs)
+
     ffmpeg_cmd = [
         'ffmpeg', '-y',
         '-hide_banner',
@@ -355,12 +433,18 @@ def embed_subtitle(video_path, subtitle_path, language="Brazilian Portuguese"):
         '-progress', '-',
         '-i', video_path,
         '-i', subtitle_path,
-        '-map', '0:v', '-map', '0:a?', '-map', '1:s',
+        '-map', '0:v:0', '-map', '0:a?', '-map', '0:s?', '-map', '1:s',
         '-c', 'copy',
         f'-c:s', s_codec,
-        f'-metadata:s:s:0', f'language={lang_code}',
-        output_path
+        f'-metadata:s:s:{new_sub_index}', f'language={lang_code}',
+        f'-metadata:s:s:{new_sub_index}', f'title={language}',
+        f'-disposition:s:{new_sub_index}', 'default'
     ]
+
+    for i in range(new_sub_index):
+        ffmpeg_cmd.extend([f'-disposition:s:{i}', '0'])
+
+    ffmpeg_cmd.append(output_path)
     
     try:
         process = subprocess.Popen(
@@ -404,7 +488,15 @@ def embed_subtitle(video_path, subtitle_path, language="Brazilian Portuguese"):
             stderr_output = process.stderr.read()
             raise subprocess.CalledProcessError(process.returncode, ffmpeg_cmd, stderr=stderr_output)
             
-        print(f"\n\nSuccess! Subtitled video saved to: {output_path}")
+        if in_place:
+            try:
+                os.replace(output_path, video_path)
+                print(f"\n\nSuccess! Subtitled video saved in-place to: {video_path}")
+            except Exception as e:
+                print(f"\n\n⚠️ Error replacing original file: {e}. Embedded file saved to {output_path}")
+                return False
+        else:
+            print(f"\n\nSuccess! Subtitled video saved to: {output_path}")
         return True
     except subprocess.CalledProcessError as e:
         print(f"\n❌ Error embedding subtitle: {e.stderr if hasattr(e, 'stderr') else e}")
