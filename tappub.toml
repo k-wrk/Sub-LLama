@@ -1,0 +1,21 @@
+[project]
+name = "sub-llama"
+version = "1.0.0"
+description = "Local subtitle translator and video muxer using CTranslate2"
+license = "PolyForm-Noncommercial-1.0.0"
+homepage = "https://github.com/k-wrk/Sub-LLama"
+
+[tap]
+repo = "k-wrk/homebrew-tap"
+branch = "main"
+
+[build]
+type = "cargo"
+dependencies = ["ffmpeg"]
+build_dependencies = [
+    "cmake",
+    "rust",
+]
+
+[hooks]
+files = ["Cargo.toml"]
