@@ -28,7 +28,16 @@ A CLI tool written in Rust to extract, translate, and embed subtitles directly i
 
 ---
 
-## Installation & Compilation
+## Installation
+
+### Via Homebrew (macOS & Linux)
+
+```bash
+brew tap k-wrk/tap
+brew install sub-llama
+```
+
+### From Source (Cargo)
 
 Clone the repository and compile the optimized release binary:
 
@@ -127,6 +136,12 @@ Model weights and vocabularies are downloaded automatically on first execution a
 
 ---
 
+## Disclaimer
+
+This project is developed for educational and personal productivity purposes. The author is not responsible for any misuse of this software, including the unauthorized translation or distribution of copyrighted materials. Users are solely responsible for ensuring they have the legal right to process and translate the media files they input into this tool.
+
+---
+
 ## License
 
 Distributed under the **PolyForm Noncommercial License 1.0.0**.
@@ -134,3 +149,4 @@ Distributed under the **PolyForm Noncommercial License 1.0.0**.
 - Free for personal, academic, educational, and non-commercial research use.
 - Commercial use or use for commercial gain is **strictly prohibited** without prior written agreement.
 - See [`LICENSE`](LICENSE) for the full license terms.
+
