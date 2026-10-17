@@ -1,0 +1,27 @@
+[package]
+name = "sub-llama"
+version = "0.2.0"
+edition = "2024"
+
+[[bin]]
+name = "sub-llama"
+path = "src/main.rs"
+
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+indicatif = "0.17"
+serde_json = "1.0"
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+regex = "1.10"
+anyhow = "1.0.104"
+ureq = "3.4.2"
+subparse = "0.7"
+rayon = "1.10"
+dialoguer = "0.11"
+colored = "2.2"
+ct2rs = { version = "0.10.1", package = "ct2rs-platform" }
+flate2 = "1.1.10"
+tar = "0.4.46"
+

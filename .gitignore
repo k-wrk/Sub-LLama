@@ -1,10 +1,15 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+# Rust build artifacts
+/target/
+**/*.rs.bk
+*.tmp_embed_*
 
-# Virtual environments
-.venv
+# Media files
+*.mkv
+*.mp4
+*.avi
+*.webm
+*.srt
+
+# OS files
+.DS_Store
+Thumbs.db
